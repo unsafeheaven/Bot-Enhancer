@@ -22,6 +22,23 @@ _last_reply: dict[int, float] = {}
 # Image types that trigger "photo mode"
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 
+# Her reaction emoji set (matches her allowed emoji vibe)
+_CALLED_REACTIONS = ["🫶", "👀", "🤍", "✨", "😭", "🙄"]
+_RANDOM_REACTIONS = ["👀", "😭", "💀", "✨"]
+
+# Chance she also drops a reaction emoji (independent of the text reply)
+CALLED_REACTION_CHANCE = 0.6
+RANDOM_REACTION_CHANCE = 0.3
+
+
+async def _maybe_react(message: discord.Message, pool: list[str], chance: float):
+    if random.random() > chance:
+        return
+    try:
+        await message.add_reaction(random.choice(pool))
+    except (discord.Forbidden, discord.HTTPException):
+        pass
+
 
 def _on_cooldown(user_id: int) -> bool:
     now = time.time()
@@ -101,6 +118,7 @@ class ChatCog(commands.Cog):
                 return
 
             _mark_used(user_id)
+            await _maybe_react(message, _CALLED_REACTIONS, CALLED_REACTION_CHANCE)
             prompt = await build_prompt(clean_content)
             history_manager.remember(user_id, content)
             await self._reply(message, prompt, username, channel_id, user_id, photo_mode=photo_mode)
@@ -111,6 +129,7 @@ class ChatCog(commands.Cog):
             if _on_cooldown(user_id):
                 return
             _mark_used(user_id)
+            await _maybe_react(message, _RANDOM_REACTIONS, RANDOM_REACTION_CHANCE)
             history_manager.remember(user_id, content)
             await self._reply(message, content, username, channel_id, user_id)
 
