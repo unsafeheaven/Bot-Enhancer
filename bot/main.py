@@ -22,14 +22,14 @@ logging.basicConfig(
 log = logging.getLogger("bot")
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "")
-OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+CEREBRAS_API_KEY = os.environ.get("CEREBRAS_API_KEY", "")
 
 if not DISCORD_TOKEN:
     log.error("DISCORD_TOKEN is not set. Add it to your Replit Secrets.")
     sys.exit(1)
 
-if not OPENROUTER_API_KEY:
-    log.error("OPENROUTER_API_KEY is not set. Add it to your Replit Secrets.")
+if not CEREBRAS_API_KEY:
+    log.error("CEREBRAS_API_KEY is not set. Add it to your Replit Secrets.")
     sys.exit(1)
 
 log.info("Rin is waking up 🤍")

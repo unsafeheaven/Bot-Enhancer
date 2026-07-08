@@ -6,11 +6,11 @@ from openai import AsyncOpenAI
 from typing import List, Dict, Optional
 
 client = AsyncOpenAI(
-    api_key=os.environ.get("OPENROUTER_API_KEY", ""),
-    base_url="https://openrouter.ai/api/v1",
+    api_key=os.environ.get("CEREBRAS_API_KEY", ""),
+    base_url="https://api.cerebras.ai/v1",
 )
 
-MODEL = "openai/gpt-oss-20b:free"
+MODEL = "gemma-4-31b"
 
 SLANG = """
 slang to use naturally (don't force all of them, pick what fits, never use every single one in one message):

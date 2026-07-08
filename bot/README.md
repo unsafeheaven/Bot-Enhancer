@@ -1,6 +1,6 @@
 # Rin — Discord Bot
 
-An extremely-online gen z Discord bot with a real personality: energetic, playful, tsundere, music-obsessed, and talkative. Powered by an LLM via OpenRouter.
+An extremely-online gen z Discord bot with a real personality: energetic, playful, tsundere, music-obsessed, and talkative. Powered by an LLM via Cerebras.
 
 ## Setup
 
@@ -10,9 +10,9 @@ An extremely-online gen z Discord bot with a real personality: energetic, playfu
 3. Enable **Message Content Intent** under Bot → Privileged Gateway Intents
 4. Copy the token and add it as `DISCORD_TOKEN` in Replit Secrets
 
-### 2. OpenRouter API Key
-1. Go to [openrouter.ai/keys](https://openrouter.ai/keys)
-2. Create a key and add it as `OPENROUTER_API_KEY` in Replit Secrets
+### 2. Cerebras API Key
+1. Go to [cloud.cerebras.ai](https://cloud.cerebras.ai)
+2. Create a key and add it as `CEREBRAS_API_KEY` in Replit Secrets
 
 ### 3. Invite the bot
 Use this URL (replace `CLIENT_ID` with your app's client ID):
@@ -40,6 +40,10 @@ Required permissions:
 | `/reset` | clear her memory for the channel |
 | `/forgetme` | clear what she remembers about you specifically |
 | Random replies | she randomly chimes in (1 in 15 chance) — she's talkative |
+
+## Provider
+
+Rin runs on Cerebras (`gemma-4-31b`) via the OpenAI-compatible SDK pointed at `https://api.cerebras.ai/v1`. Needs `CEREBRAS_API_KEY` in Replit Secrets.
 
 ## Personality
 
