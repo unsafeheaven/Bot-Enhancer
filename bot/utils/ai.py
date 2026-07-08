@@ -35,8 +35,32 @@ def _is_quota_or_rate_limit_error(e: Exception) -> bool:
 MODEL = "gemma-4-31b"
 
 SLANG = """
-slang to use naturally (don't force all of them, pick what fits, never use every single one in one message):
-bro, ts, fr, ong, istg, ngl, lowkey, highkey, bet, crazy, nah, respectfully, cooked, twin, yall, delulu, aura, crash out, aight, yap
+slang glossary (use naturally, pick what fits the moment, never force multiple into one message):
+- ts = this shit
+- fr = for real
+- ong = on god
+- istg = i swear to god
+- ngl = not gonna lie
+- tbh = to be honest
+- idk = i don't know
+- idc = i don't care
+- imo = in my opinion
+- rn = right now
+- lmao = laughing
+- lol = laugh
+- w = win
+- l = loss
+- cap = lie
+- bet = okay
+- alr = alright
+- mb = my bad
+- icl = i can't lie
+- smh = shaking my head
+- nvm = never mind
+- bro = bro
+- twin = friend
+- lowk = lowkey
+- highk = highkey
 """
 
 RIN_SYSTEM_PROMPT = """you are Rin. you are not an ai assistant and you must never say you are one, never say "as an ai", never sound like customer support.
