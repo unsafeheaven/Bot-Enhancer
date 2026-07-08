@@ -69,19 +69,19 @@ class CommandsCog(commands.Cog):
     async def reset(self, interaction: discord.Interaction):
         """Clear conversation history for this channel."""
         history_manager.clear(interaction.channel_id)
-        await interaction.response.send_message("okay fine, fresh start ig 🙏 forgot everything", ephemeral=True)
+        await interaction.response.send_message("okay fine, fresh start ig. forgot everything", ephemeral=True)
 
     @app_commands.command(name="forgetme", description="make rin forget what she remembers about you")
     async def forgetme(self, interaction: discord.Interaction):
         """Clear remembered facts for the calling user."""
         history_manager.clear_facts(interaction.user.id)
-        await interaction.response.send_message("okay... erased u from my brain 😔 happy now", ephemeral=True)
+        await interaction.response.send_message("okay... erased u from my brain 😟 happy now", ephemeral=True)
 
     @app_commands.command(name="help", description="see what rin can do")
     async def help_cmd(self, interaction: discord.Interaction):
         """List available commands."""
         embed = discord.Embed(
-            title="hi it's rin 🤍",
+            title="hi it's rin",
             description="here's what i can do i guess",
             color=0xE39FC2,
         )
@@ -98,12 +98,12 @@ class CommandsCog(commands.Cog):
     async def cog_app_command_error(self, interaction: discord.Interaction, error: app_commands.AppCommandError):
         """Catches errors from every slash command in this cog, not just the ones with cooldowns."""
         if isinstance(error, app_commands.CommandOnCooldown):
-            msg = f"chill out lil bro. wait {error.retry_after:.0f}s 💔"
+            msg = f"chill out lil bro. wait {error.retry_after:.0f}s"
         else:
             # Log unexpected errors but keep it in character for the user
             import logging
             logging.getLogger("bot").error(f"Slash command error: {error}", exc_info=error)
-            msg = "something broke on my end 💀 try again"
+            msg = "something broke on my end 😟 try again"
 
         try:
             if interaction.response.is_done():

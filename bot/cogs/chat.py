@@ -23,13 +23,14 @@ _last_reply: dict[int, float] = {}
 # Image types that trigger "photo mode"
 _IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
 
-# Her reaction emoji set (matches her allowed emoji vibe)
-_CALLED_REACTIONS = ["🫶", "👀", "🤍", "✨", "😭", "🙄"]
-_RANDOM_REACTIONS = ["👀", "😭", "💀", "✨"]
+# Her reaction emoji set — restricted to her allowed emojis only; she uses emoji rarely.
+_CALLED_REACTIONS = ["😭", "💔", "😟"]
+_RANDOM_REACTIONS = ["😭", "💔", "😟"]
 
-# Chance she also drops a reaction emoji (independent of the text reply)
-CALLED_REACTION_CHANCE = 0.6
-RANDOM_REACTION_CHANCE = 0.3
+# Chance she also drops a reaction emoji (independent of the text reply) — kept low
+# since she uses emoji sparingly, usually not at all.
+CALLED_REACTION_CHANCE = 0.2
+RANDOM_REACTION_CHANCE = 0.1
 
 
 async def _maybe_react(message: discord.Message, pool: list[str], chance: float):
@@ -146,7 +147,7 @@ class ChatCog(commands.Cog):
 
             if _on_cooldown(user_id):
                 try:
-                    await message.add_reaction("👀")
+                    await message.add_reaction("😭")
                 except (discord.Forbidden, discord.HTTPException):
                     pass
                 return
@@ -175,7 +176,7 @@ class ChatCog(commands.Cog):
             # Members intent likely isn't enabled in the dev portal — degrade gracefully.
             try:
                 await message.reply(
-                    "can't see everyone in here yet, someone needs to flip on the members intent for me 😔",
+                    "can't see everyone in here yet, someone needs to flip on the members intent for me 😟",
                     mention_author=False,
                 )
             except (discord.Forbidden, discord.HTTPException):
