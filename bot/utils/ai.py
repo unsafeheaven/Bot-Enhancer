@@ -2,6 +2,8 @@
 OpenRouter wrapper for the Discord bot — Rin's brain.
 """
 import os
+import random
+import openai
 from openai import AsyncOpenAI
 from typing import List, Dict, Optional
 
@@ -9,6 +11,26 @@ client = AsyncOpenAI(
     api_key=os.environ.get("CEREBRAS_API_KEY", ""),
     base_url="https://api.cerebras.ai/v1",
 )
+
+# In-character things to say when the API key is out of quota / rate-limited,
+# instead of a generic "something broke" error.
+AFK_MESSAGES = [
+    "brb going afk for a bit 🤍 miss me",
+    "afk rn, be back later 😴",
+    "gtg afk for a sec, don't miss me too much 🙄",
+    "afk... anyway say something interesting for when i'm back",
+]
+
+
+def _is_quota_or_rate_limit_error(e: Exception) -> bool:
+    """Detect Cerebras/OpenAI-style 429 rate-limit or quota-exhausted errors."""
+    if isinstance(e, openai.RateLimitError):
+        return True
+    status_code = getattr(e, "status_code", None)
+    if status_code == 429:
+        return True
+    message = str(e).lower()
+    return any(term in message for term in ("rate limit", "quota", "insufficient_quota", "too many requests"))
 
 MODEL = "gemma-4-31b"
 
@@ -93,5 +115,8 @@ async def get_ai_response(
     except Exception as e:
         import logging
         logging.getLogger("bot").error(f"AI request failed: {e}")
-        # Stay in character even on error
+        if _is_quota_or_rate_limit_error(e):
+            # Free tier / quota ran out — stay in character as "afk" instead of erroring
+            return random.choice(AFK_MESSAGES)
+        # Stay in character even on other errors
         return "bro something broke on my end 💔 gimme a sec"
