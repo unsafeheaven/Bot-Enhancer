@@ -39,6 +39,7 @@ log.info("Rin is waking up 🤍")
 
 intents = discord.Intents.default()
 intents.message_content = True  # required to read message text
+intents.members = True  # required to see the full member roster (for "rate N people")
 
 bot = commands.Bot(
     command_prefix="!",   # unused but required by discord.py

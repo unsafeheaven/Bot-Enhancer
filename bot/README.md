@@ -7,7 +7,7 @@ An extremely-online gen z Discord bot with a real personality: energetic, playfu
 ### 1. Discord Bot Token
 1. Go to [discord.com/developers/applications](https://discord.com/developers/applications)
 2. Create a new Application → Bot
-3. Enable **Message Content Intent** under Bot → Privileged Gateway Intents
+3. Enable **Message Content Intent** and **Server Members Intent** under Bot → Privileged Gateway Intents (Members Intent is needed for "rate N people" to see the full server roster)
 4. Copy the token and add it as `DISCORD_TOKEN` in Replit Secrets
 
 ### 2. Cerebras API Key

@@ -9,6 +9,7 @@ from discord.ext import commands
 
 from utils.ai import get_ai_response
 from utils.history import history_manager
+from utils.server_context import get_top_messages, get_random_members
 
 # Chance the bot randomly chimes in on a message (1 in N)
 RANDOM_REPLY_CHANCE = 15
@@ -98,6 +99,40 @@ class ChatCog(commands.Cog):
         called = name_called or mentioned or replied_to_her
         photo_mode = _has_image(message)
 
+        # Strip the mention/name so command phrasing can be matched cleanly
+        # regardless of whether she was @mentioned or called by name.
+        stripped_content = re.sub(r"<@!?\d+>", "", content).strip()
+        stripped_content = re.sub(r"\brin\b", "", stripped_content, flags=re.IGNORECASE).strip()
+
+        # Special requests only fire when she's actually being talked to, and only
+        # when phrased as an actual command (not casual conversation that happens
+        # to mention "rate" or "top messages").
+        rate_match = re.search(
+            r"^\s*rate\s+(\d{1,2})\s*(?:people|guys|folks|members|friends)\s*$",
+            stripped_content, re.IGNORECASE,
+        ) if called else None
+        top_match = re.search(
+            r"^\s*(?:show|give|what(?:'?s| is)|send)?\s*(?:me\s+)?(?:the\s+)?top\s*(\d{1,2})?\s*messages?\s*$",
+            stripped_content, re.IGNORECASE,
+        ) if called else None
+
+        if rate_match and _on_cooldown(user_id):
+            return
+        if rate_match:
+            _mark_used(user_id)
+            history_manager.remember(user_id, content)
+            await self._rate_people(message, int(rate_match.group(1)))
+            return
+
+        if top_match and _on_cooldown(user_id):
+            return
+        if top_match:
+            _mark_used(user_id)
+            history_manager.remember(user_id, content)
+            count = int(top_match.group(1)) if top_match.group(1) else 5
+            await self._talk_top_messages(message, count)
+            return
+
         # Build prompt — if replying to another (non-Rin) message, include that context
         async def build_prompt(base_text: str) -> str:
             if resolved_ref is not None and resolved_ref.content and resolved_ref.author != self.bot.user:
@@ -105,8 +140,7 @@ class ChatCog(commands.Cog):
             return base_text
 
         if called or photo_mode:
-            clean_content = re.sub(r"<@!?\d+>", "", content).strip()
-            clean_content = re.sub(r"\brin\b", "", clean_content, flags=re.IGNORECASE).strip()
+            clean_content = stripped_content
             if not clean_content:
                 clean_content = "[posted an image]" if photo_mode else "hey"
 
@@ -132,6 +166,59 @@ class ChatCog(commands.Cog):
             await _maybe_react(message, _RANDOM_REACTIONS, RANDOM_REACTION_CHANCE)
             history_manager.remember(user_id, content)
             await self._reply(message, content, username, channel_id, user_id)
+
+    async def _rate_people(self, message: discord.Message, count: int):
+        count = max(1, min(count, 10))
+        try:
+            members = await get_random_members(message.guild, count)
+        except discord.Forbidden:
+            # Members intent likely isn't enabled in the dev portal — degrade gracefully.
+            try:
+                await message.reply(
+                    "can't see everyone in here yet, someone needs to flip on the members intent for me 😔",
+                    mention_author=False,
+                )
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            return
+
+        if not members:
+            try:
+                await message.reply("bro there's literally no one else here to rate 😭", mention_author=False)
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            return
+
+        names = ", ".join(m.display_name for m in members)
+        prompt = (
+            f"rate these {len(members)} server members 1-10 each, one short savage-but-playful line per "
+            f"person, never about appearance, keep it teasing not genuinely mean: {names}"
+        )
+        await self._reply(message, prompt, message.author.display_name, message.channel.id, message.author.id)
+
+    async def _talk_top_messages(self, message: discord.Message, count: int):
+        count = max(1, min(count, 5))
+        try:
+            top = await get_top_messages(message.channel, top_n=count)
+        except (discord.Forbidden, discord.HTTPException):
+            top = []
+
+        if not top:
+            try:
+                await message.reply("nothing's popping off in here rn 💔 chat is mid", mention_author=False)
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+            return
+
+        lines = [
+            f'{msg.author.display_name}: "{msg.content}" ({reactions} reactions)'
+            for msg, reactions in top
+        ]
+        prompt = (
+            "here are the top messages in this channel right now by reaction count — react to them "
+            "and call out your favorite:\n" + "\n".join(lines)
+        )
+        await self._reply(message, prompt, message.author.display_name, message.channel.id, message.author.id)
 
     async def _reply(
         self,

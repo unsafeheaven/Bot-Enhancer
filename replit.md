@@ -38,7 +38,8 @@ bot/
 - Single unified personality (Rin) — no admin/non-admin split, matches the product intent of one consistent character everywhere.
 - Conversation history is in-memory per channel, capped at 20 messages — resets on restart (privacy/simplicity over persistence).
 - Per-user "memory" (favorite songs/artists/games, nicknames, birthdays, pets) is also in-memory, extracted via lightweight regex from things people say, and injected into the system prompt so Rin can bring them up naturally.
-- Triggers: saying "rin" anywhere, @mention, replying directly to one of her messages, posting an image (photo mode — all-caps hype reaction), slash commands, or a random 1-in-15 chance to chime in unprompted (she's talkative).
+- Triggers: saying "rin" anywhere, @mention, replying directly to one of her messages, posting an image (photo mode — all-caps hype reaction), "rate N people" (rates random real server members), "top N messages" (comments on the channel's most-reacted messages), slash commands, or a random 1-in-15 chance to chime in unprompted (she's talkative).
+- Occasionally reacts with an emoji from her set (in addition to replying) when called/mentioned or on random chime-ins.
 - Uses OpenRouter with the user's own API key (`OPENROUTER_API_KEY`) — Replit's AI Integrations proxy for OpenRouter required an account upgrade the user didn't want, so we fell back to a user-supplied key.
 
 ## Product
