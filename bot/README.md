@@ -1,6 +1,6 @@
-# Discord AI Chatbot
+# Rin — Discord Bot
 
-A chill Gen Z Discord bot powered by GPT-4o-mini.
+An extremely-online gen z Discord bot with a real personality: energetic, playful, tsundere, music-obsessed, and talkative. Powered by an LLM via OpenRouter.
 
 ## Setup
 
@@ -26,32 +26,23 @@ Required permissions:
 - Use Slash Commands
 - Add Reactions
 
-## Deploying on Railway
-
-This folder is ready to deploy standalone on [Railway](https://railway.app):
-
-1. Push this `bot/` folder to a GitHub repo (or use `railway up` from inside it with the Railway CLI).
-2. In Railway, create a new project → **Deploy from GitHub repo** (or `railway init` + `railway up` if using the CLI), pointing at this folder as the root.
-3. Railway auto-detects it as a Python app via `requirements.txt` and `railway.json`/`Procfile` (worker process, no web port needed).
-4. In the Railway project's **Variables** tab, add:
-   - `DISCORD_TOKEN`
-   - `OPENROUTER_API_KEY` (or `CEREBRAS_API_KEY`/`GROQ_API_KEY` if you've switched providers in `utils/ai.py`)
-5. Deploy. Railway will run `python main.py` as a background worker — check the **Deployments → Logs** tab to confirm it logs in successfully.
-
-**Note:** never paste API keys or tokens directly into chat, README files, or commits — always add them through Railway's Variables tab (or Replit Secrets when running here).
-
 ## Features
 
 | Feature | Description |
 |---|---|
-| `@mention` | Mention the bot to chat with it |
-| `servent <prompt>` | Say "servent" anywhere + your message |
-| `/ask <prompt>` | Direct slash command |
-| `/roast [@user]` | Get roasted |
-| `/vibe` | Vibe check the chat |
-| `/reset` | Clear bot memory for the channel |
-| Random replies | Bot randomly chimes in (1 in 15 chance) |
+| say "rin" anywhere | she's "called" — responds in character |
+| `@mention` | mention her to chat |
+| reply to her message | she'll pick the thread back up |
+| post a picture | instant all-caps hype reaction, then back to normal |
+| `/ask <prompt>` | direct slash command |
+| `/roast [@user]` | playful roast, never mean |
+| `/vibe` | vibe check the chat |
+| `/reset` | clear her memory for the channel |
+| `/forgetme` | clear what she remembers about you specifically |
+| Random replies | she randomly chimes in (1 in 15 chance) — she's talkative |
 
 ## Personality
 
-Talks like a chill 2026 TikTok/Instagram commenter. Dry humor, Gen Z slang, short replies (3–20 words), rarely uses punctuation, 0–2 emojis per message.
+Rin is not an assistant — she's an extremely online gen z best-friend type: playful, tsundere, slightly flirty (never explicit), music-obsessed, funny, a little chaotic, and genuinely caring when someone's actually upset. See `utils/ai.py` for the full personality spec.
+
+She also remembers small things people tell her (favorite songs/artists/games, nicknames, birthdays, pets) per user and brings them up naturally later.

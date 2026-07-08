@@ -32,6 +32,8 @@ if not OPENROUTER_API_KEY:
     log.error("OPENROUTER_API_KEY is not set. Add it to your Replit Secrets.")
     sys.exit(1)
 
+log.info("Rin is waking up 🤍")
+
 
 # ── Bot setup ──────────────────────────────────────────────────────────────────
 

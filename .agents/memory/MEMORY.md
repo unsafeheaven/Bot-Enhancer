@@ -1,0 +1,3 @@
+- [Discord bot as standalone Python app](discord-bot-python.md) — bots live outside the pnpm workspace/artifact system; run via a plain `configureWorkflow`, not `createArtifact`.
+- [OpenRouter AI integration account gating](openrouter-ai-integration-gating.md) — `setupReplitAIIntegrations` can fail with `awaiting_account_upgrade`; fall back to `requestSecrets` for the provider's own API key.
+- [Discord bot on_message trigger correctness](discord-bot-trigger-correctness.md) — always resolve message.reference with a fetch fallback and filter `author.bot`, not just `== self.bot.user`.
