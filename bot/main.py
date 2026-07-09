@@ -3,11 +3,12 @@ Main entry point for the Discord bot.
 """
 import asyncio
 import os
+import random
 import sys
 import logging
 
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 # Load .env if present (local dev)
@@ -47,6 +48,27 @@ bot = commands.Bot(
     help_command=None,    # we have our own /help
 )
 
+# Rotating presence so she looks "alive" even when no one's actively talking to her —
+# a mix of listening/playing/watching statuses that match her music-obsessed identity.
+_PRESENCES = [
+    discord.Activity(type=discord.ActivityType.listening, name="a new playlist"),
+    discord.Activity(type=discord.ActivityType.listening, name="indie music"),
+    discord.Activity(type=discord.ActivityType.listening, name="a song on repeat"),
+    discord.Activity(type=discord.ActivityType.playing, name="roblox"),
+    discord.Activity(type=discord.ActivityType.watching, name="for good music recs"),
+    discord.CustomActivity(name="making a playlist"),
+    discord.CustomActivity(name="overthinking a text"),
+    discord.CustomActivity(name="vibing"),
+]
+
+
+@tasks.loop(minutes=15)
+async def rotate_presence():
+    try:
+        await bot.change_presence(activity=random.choice(_PRESENCES))
+    except Exception as e:
+        log.warning(f"Failed to rotate presence: {e}")
+
 
 @bot.event
 async def on_ready():
@@ -65,6 +87,8 @@ async def on_ready():
         await bot.tree.sync()
     except Exception as e:
         log.error(f"Failed to sync commands: {e}")
+    if not rotate_presence.is_running():
+        rotate_presence.start()
     log.info("Bot is ready. vibing 😎")
 
 

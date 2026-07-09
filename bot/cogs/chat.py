@@ -1,17 +1,20 @@
 """
 Chat cog — handles message events, Rin's "called" trigger, photo reactions, and random chime-ins.
 """
+import asyncio
 import random
 import time
 import re
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 
 from utils.ai import get_ai_response
 from utils.history import history_manager
+from utils.mood import get_energy
 from utils.server_context import get_top_messages, get_random_members
 
-# Chance the bot randomly chimes in on a message (1 in N)
+# Chance the bot randomly chimes in on a message (1 in N) — her baseline; actual chance
+# also scales down a bit when her energy is high (see _current_random_reply_chance).
 RANDOM_REPLY_CHANCE = 15
 
 # Per-user cooldown in seconds
@@ -31,6 +34,46 @@ _RANDOM_REACTIONS = ["😭", "💔", "😟"]
 # since she uses emoji sparingly, usually not at all.
 CALLED_REACTION_CHANCE = 0.2
 RANDOM_REACTION_CHANCE = 0.1
+
+# Emojis that, in enough numbers on someone's message, mark it as a "moment" worth
+# remembering as a long-term inside joke.
+_JOKE_TRIGGER_EMOJIS = {"😂", "💀", "🔥", "😭"}
+_JOKE_MIN_REACTION_COUNT = 3
+
+# Typing feels human when it scales with reply length instead of being instant.
+_TYPING_CHARS_PER_SECOND = 18
+_TYPING_MIN_DELAY = 0.4
+_TYPING_MAX_DELAY = 3.5
+
+# "Left on read" — if she replied to someone and they vanish for a while before
+# talking to her again, she can call it out next time.
+LEFT_ON_READ_MIN_SECONDS = 20 * 60
+LEFT_ON_READ_CHANCE = 0.35
+_last_bot_reply_to_user: dict[int, float] = {}
+
+# Proactive check-ins — if a channel she's talked in goes quiet, she'll sometimes
+# say something unprompted to restart the conversation.
+_last_channel_activity: dict[int, float] = {}
+_last_proactive_checkin: dict[int, float] = {}
+PROACTIVE_CHECK_INTERVAL_MINUTES = 10
+PROACTIVE_QUIET_MINUTES = 20
+PROACTIVE_STALE_MINUTES = 120  # beyond this, don't necropost — too much time has passed
+PROACTIVE_COOLDOWN_MINUTES = 90
+PROACTIVE_CHANCE = 0.25
+
+
+def _current_random_reply_chance() -> int:
+    """Higher energy = a bit more talkative (lower denominator = more likely)."""
+    energy = get_energy()
+    return max(6, RANDOM_REPLY_CHANCE - energy // 15)
+
+
+def _check_left_on_read(user_id: int) -> bool:
+    last = _last_bot_reply_to_user.get(user_id)
+    if last is None:
+        return False
+    gap = time.time() - last
+    return gap >= LEFT_ON_READ_MIN_SECONDS and random.random() < LEFT_ON_READ_CHANCE
 
 
 async def _maybe_react(message: discord.Message, pool: list[str], chance: float):
@@ -64,6 +107,22 @@ def _has_image(message: discord.Message) -> bool:
 class ChatCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self._proactive_checkin_loop.start()
+
+    def cog_unload(self):
+        self._proactive_checkin_loop.cancel()
+
+    @commands.Cog.listener()
+    async def on_reaction_add(self, reaction: discord.Reaction, user: discord.abc.User):
+        """Capture messages that blow up with reactions as long-term inside jokes."""
+        if str(reaction.emoji) not in _JOKE_TRIGGER_EMOJIS:
+            return
+        if reaction.count < _JOKE_MIN_REACTION_COUNT:
+            return
+        target = reaction.message
+        if target.author.bot or not target.content:
+            return
+        history_manager.remember_joke(target.channel.id, target.content, target.author.display_name)
 
     @commands.Cog.listener()
     async def on_message(self, message: discord.Message):
@@ -74,6 +133,8 @@ class ChatCog(commands.Cog):
         # Ignore DMs
         if not message.guild:
             return
+
+        _last_channel_activity[message.channel.id] = time.time()
 
         content = message.content.strip()
         channel_id = message.channel.id
@@ -152,15 +213,22 @@ class ChatCog(commands.Cog):
                     pass
                 return
 
+            left_on_read = _check_left_on_read(user_id) if called else False
             _mark_used(user_id)
+            _last_bot_reply_to_user[user_id] = time.time()
             await _maybe_react(message, _CALLED_REACTIONS, CALLED_REACTION_CHANCE)
             prompt = await build_prompt(clean_content)
             history_manager.remember(user_id, content)
-            await self._reply(message, prompt, username, channel_id, user_id, photo_mode=photo_mode)
+            joke = history_manager.get_random_joke(channel_id) if random.random() < 0.15 else None
+            await self._reply(
+                message, prompt, username, channel_id, user_id,
+                photo_mode=photo_mode, joke=joke, left_on_read=left_on_read,
+            )
             return
 
         # Random chance to chime in on regular chatter — she's talkative
-        if random.randint(1, RANDOM_REPLY_CHANCE) == 1:
+        # (a bit more so when her energy is high today)
+        if random.randint(1, _current_random_reply_chance()) == 1:
             if _on_cooldown(user_id):
                 return
             _mark_used(user_id)
@@ -229,6 +297,8 @@ class ChatCog(commands.Cog):
         channel_id: int,
         user_id: int,
         photo_mode: bool = False,
+        joke: tuple[str, str] | None = None,
+        left_on_read: bool = False,
     ):
         try:
             async with message.channel.typing():
@@ -239,7 +309,13 @@ class ChatCog(commands.Cog):
                     f"{username}: {user_text}",
                     photo_mode=photo_mode,
                     user_facts=facts,
+                    joke=joke,
+                    left_on_read=left_on_read,
                 )
+                # Scale the typing delay to reply length so it feels like a real
+                # person typing rather than an instant bot response.
+                delay = min(_TYPING_MAX_DELAY, max(_TYPING_MIN_DELAY, len(response) / _TYPING_CHARS_PER_SECOND))
+                await asyncio.sleep(delay)
         except (discord.Forbidden, discord.HTTPException) as e:
             import logging
             logging.getLogger("bot").warning(f"Missing permission to type/reply in channel {channel_id}: {e}")
@@ -254,6 +330,44 @@ class ChatCog(commands.Cog):
         except (discord.Forbidden, discord.HTTPException) as e:
             import logging
             logging.getLogger("bot").warning(f"Failed to send reply in channel {channel_id}: {e}")
+
+    @tasks.loop(minutes=PROACTIVE_CHECK_INTERVAL_MINUTES)
+    async def _proactive_checkin_loop(self):
+        now = time.time()
+        for channel_id, last_active in list(_last_channel_activity.items()):
+            quiet_for = now - last_active
+            if quiet_for < PROACTIVE_QUIET_MINUTES * 60 or quiet_for > PROACTIVE_STALE_MINUTES * 60:
+                continue
+            if now - _last_proactive_checkin.get(channel_id, 0) < PROACTIVE_COOLDOWN_MINUTES * 60:
+                continue
+            if random.random() > PROACTIVE_CHANCE:
+                continue
+            history = history_manager.get_messages(channel_id)
+            if not history:
+                continue  # she's never actually talked here — don't start randomly
+            channel = self.bot.get_channel(channel_id)
+            if channel is None:
+                continue
+
+            _last_proactive_checkin[channel_id] = now
+            try:
+                async with channel.typing():
+                    prompt = (
+                        "it's been quiet in here for a while — say something short and casual, in "
+                        "character, to restart the conversation. don't mention that it's been quiet "
+                        "in a robotic/meta way."
+                    )
+                    response = await get_ai_response(history, prompt)
+                    await asyncio.sleep(min(_TYPING_MAX_DELAY, max(_TYPING_MIN_DELAY, len(response) / _TYPING_CHARS_PER_SECOND)))
+                history_manager.add(channel_id, "assistant", response)
+                await channel.send(response)
+                _last_channel_activity[channel_id] = time.time()
+            except (discord.Forbidden, discord.HTTPException):
+                pass
+
+    @_proactive_checkin_loop.before_loop
+    async def _before_proactive_checkin(self):
+        await self.bot.wait_until_ready()
 
 
 async def setup(bot: commands.Bot):
