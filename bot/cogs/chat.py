@@ -10,6 +10,7 @@ import discord
 from discord.ext import commands, tasks
 
 from utils.ai import get_ai_response, get_random_song_drop
+from utils.music_art import fetch_art_url
 from utils.history import history_manager
 from utils.mood import get_energy
 from utils.server_context import get_top_messages, get_random_members
@@ -534,9 +535,22 @@ class ChatCog(commands.Cog):
         if channel is None:
             return
 
-        drop = get_random_song_drop()
+        drop_text, song, artist = get_random_song_drop()
+
+        # Try to fetch real album art from iTunes — fall back to plain text if it fails
+        art_url = await fetch_art_url(artist, song, size=600)
+
         try:
-            await channel.send(drop)
+            if art_url:
+                embed = discord.Embed(
+                    description=drop_text,
+                    color=0x0d0d0d,
+                )
+                embed.set_image(url=art_url)
+                embed.set_footer(text=f"{song}  ·  {artist}")
+                await channel.send(embed=embed)
+            else:
+                await channel.send(drop_text)
             _last_channel_activity[channel_id] = time.time()
         except (discord.Forbidden, discord.HTTPException):
             pass

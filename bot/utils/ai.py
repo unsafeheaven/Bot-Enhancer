@@ -223,10 +223,12 @@ _DROP_TEMPLATES = [
 ]
 
 
-def get_random_song_drop() -> str:
+def get_random_song_drop() -> tuple[str, str, str]:
+    """Return (display_text, song, artist) for an unprompted song drop."""
     song, artist, reaction = random.choice(SONG_DROPS)
     template = random.choice(_DROP_TEMPLATES)
-    return template.format(song=song, artist=artist, reaction=reaction)
+    text = template.format(song=song, artist=artist, reaction=reaction)
+    return text, song, artist
 
 
 # ── context builders ──────────────────────────────────────────────────────────

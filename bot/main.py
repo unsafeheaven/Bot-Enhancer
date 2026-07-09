@@ -3,18 +3,18 @@ Main entry point for the Discord bot.
 """
 import asyncio
 import os
-import random
 import sys
 import logging
+from datetime import datetime
 
 import discord
 from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
-# Load .env if present (local dev)
+from utils.music_art import fetch_art_url, fetch_image_bytes
+
 load_dotenv()
 
-# Logging — Discord.py and bot logs
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -35,47 +35,111 @@ if not CEREBRAS_API_KEY:
 
 log.info("Rin is waking up 🤍")
 
-
 # ── Bot setup ──────────────────────────────────────────────────────────────────
 
 intents = discord.Intents.default()
-intents.message_content = True  # required to read message text
-intents.members = True  # required to see the full member roster (for "rate N people")
+intents.message_content = True
+intents.members = True
 
 bot = commands.Bot(
-    command_prefix="!",   # unused but required by discord.py
+    command_prefix="!",
     intents=intents,
-    help_command=None,    # we have our own /help
+    help_command=None,
 )
 
-# Rotating presence so she looks "alive" even when no one's actively talking to her —
-# a mix of listening/playing/watching statuses that match her music-obsessed identity.
-_PRESENCES = [
-    discord.Activity(type=discord.ActivityType.listening, name="a new playlist"),
-    discord.Activity(type=discord.ActivityType.listening, name="indie music"),
-    discord.Activity(type=discord.ActivityType.listening, name="a song on repeat"),
-    discord.Activity(type=discord.ActivityType.playing, name="roblox"),
-    discord.Activity(type=discord.ActivityType.watching, name="for good music recs"),
-    discord.CustomActivity(name="making a playlist"),
-    discord.CustomActivity(name="overthinking a text"),
-    discord.CustomActivity(name="vibing"),
+# ── 7-day schedule ─────────────────────────────────────────────────────────────
+# One status + one featured artist/song per day of the week (0=Mon … 6=Sun).
+# The status shows under her name in the member list / profile.
+# The featured artist is fetched from iTunes each day to set her banner + avatar.
+
+_DAILY_STATUSES = [
+    discord.Activity(type=discord.ActivityType.listening, name="monday morning playlists"),   # Mon
+    discord.CustomActivity(name="recovering from the weekend"),                                # Tue
+    discord.Activity(type=discord.ActivityType.listening, name="sad girl hours"),             # Wed
+    discord.CustomActivity(name="it's almost friday..."),                                      # Thu
+    discord.Activity(type=discord.ActivityType.listening, name="it's giving friday"),         # Fri
+    discord.Activity(type=discord.ActivityType.listening, name="music all day"),              # Sat
+    discord.Activity(type=discord.ActivityType.listening, name="sunday morning indie"),       # Sun
 ]
 
+# (artist, song) pairs — one per day. iTunes API will fetch real album art.
+_DAILY_FEATURED: list[tuple[str, str]] = [
+    ("Mitski", "Nobody"),                        # Mon
+    ("Lana Del Rey", "Video Games"),             # Tue
+    ("Olivia Rodrigo", "drivers license"),       # Wed
+    ("The 1975", "Chocolate"),                   # Thu
+    ("Arctic Monkeys", "Do I Wanna Know"),       # Fri
+    ("Taylor Swift", "All Too Well"),            # Sat
+    ("Phoebe Bridgers", "Moon Song"),            # Sun
+]
 
-@tasks.loop(minutes=15)
-async def rotate_presence():
+_last_updated_weekday: int = -1   # track which day we last applied
+
+
+async def _apply_daily(weekday: int):
+    """Set status, banner, and avatar for the given weekday (0=Mon)."""
+    # Status
     try:
-        await bot.change_presence(activity=random.choice(_PRESENCES))
+        await bot.change_presence(activity=_DAILY_STATUSES[weekday])
+        log.info(f"Daily status set for weekday {weekday}")
     except Exception as e:
-        log.warning(f"Failed to rotate presence: {e}")
+        log.warning(f"Failed to set daily status: {e}")
 
+    # Fetch album art for banner + avatar
+    artist, song = _DAILY_FEATURED[weekday]
+    art_url = await fetch_art_url(artist, song, size=600)
+    if not art_url:
+        log.warning(f"No art found for {artist} — {song}, skipping banner/avatar update")
+        return
+
+    img_bytes = await fetch_image_bytes(art_url)
+    if not img_bytes:
+        log.warning(f"Could not download art from {art_url}")
+        return
+
+    # Avatar (supported for all bots)
+    try:
+        await bot.user.edit(avatar=img_bytes)
+        log.info(f"Daily avatar set: {artist} — {song}")
+    except discord.HTTPException as e:
+        log.warning(f"Avatar update failed (rate limited or unsupported): {e}")
+    except Exception as e:
+        log.warning(f"Avatar update error: {e}")
+
+    # Banner (requires bot to have a banner slot — fails gracefully if not available)
+    try:
+        await bot.user.edit(banner=img_bytes)
+        log.info(f"Daily banner set: {artist} — {song}")
+    except discord.HTTPException as e:
+        log.warning(f"Banner update failed (may not be supported for this bot): {e}")
+    except Exception as e:
+        log.warning(f"Banner update error: {e}")
+
+
+@tasks.loop(minutes=30)
+async def daily_update():
+    """Check every 30 min whether the day has changed; apply schedule if so."""
+    global _last_updated_weekday
+    today = datetime.now().weekday()
+    if today == _last_updated_weekday:
+        return
+    _last_updated_weekday = today
+    await _apply_daily(today)
+
+
+@daily_update.before_loop
+async def _before_daily_update():
+    await bot.wait_until_ready()
+
+
+# ── Events ─────────────────────────────────────────────────────────────────────
 
 @bot.event
 async def on_ready():
+    global _last_updated_weekday
     log.info(f"Logged in as {bot.user} (ID: {bot.user.id})")
     log.info("Syncing slash commands to all guilds...")
     try:
-        # Sync to every guild the bot is in for instant availability
         for guild in bot.guilds:
             try:
                 bot.tree.copy_global_to(guild=guild)
@@ -83,18 +147,23 @@ async def on_ready():
                 log.info(f"Synced {len(synced)} command(s) to guild {guild.name} ({guild.id})")
             except Exception as e:
                 log.warning(f"Failed to sync to guild {guild.id}: {e}")
-        # Also do a global sync
         await bot.tree.sync()
     except Exception as e:
         log.error(f"Failed to sync commands: {e}")
-    if not rotate_presence.is_running():
-        rotate_presence.start()
+
+    # Apply today's schedule immediately on startup
+    today = datetime.now().weekday()
+    _last_updated_weekday = today
+    await _apply_daily(today)
+
+    if not daily_update.is_running():
+        daily_update.start()
+
     log.info("Bot is ready. vibing 😎")
 
 
 @bot.event
 async def on_guild_join(guild: discord.Guild):
-    """Instantly sync slash commands when the bot joins a new server."""
     log.info(f"Joined guild: {guild.name} ({guild.id})")
     try:
         bot.tree.copy_global_to(guild=guild)
@@ -106,7 +175,6 @@ async def on_guild_join(guild: discord.Guild):
 
 @bot.event
 async def on_command_error(ctx: commands.Context, error):
-    # Suppress unknown command errors (we use slash commands)
     if isinstance(error, commands.CommandNotFound):
         return
     raise error
