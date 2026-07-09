@@ -53,6 +53,17 @@ PROACTIVE_CHANCE = 0.25
 SONG_DROP_INTERVAL_MINUTES = 45
 SONG_DROP_CHANCE = 0.18
 
+# Only talk in channels whose name matches one of these (case-insensitive).
+# Set to None to allow all channels.
+ALLOWED_CHANNEL_NAMES: set[str] | None = {"general"}
+
+
+def _channel_allowed(channel: discord.abc.GuildChannel) -> bool:
+    """Return True if Rin is allowed to talk in this channel."""
+    if ALLOWED_CHANNEL_NAMES is None:
+        return True
+    return getattr(channel, "name", "").lower() in ALLOWED_CHANNEL_NAMES
+
 
 def _current_random_reply_chance() -> int:
     energy = get_energy()
@@ -189,6 +200,8 @@ class ChatCog(commands.Cog):
         if message.author.bot:
             return
         if not message.guild:
+            return
+        if not _channel_allowed(message.channel):
             return
 
         _last_channel_activity[message.channel.id] = time.time()
@@ -470,7 +483,7 @@ class ChatCog(commands.Cog):
             if not history:
                 continue
             channel = self.bot.get_channel(channel_id)
-            if channel is None:
+            if channel is None or not _channel_allowed(channel):
                 continue
 
             _last_proactive_checkin[channel_id] = now
@@ -504,6 +517,14 @@ class ChatCog(commands.Cog):
         candidates = [
             cid for cid, last in _last_channel_activity.items()
             if 5 * 60 <= now - last < 3 * 3600
+        ]
+        if not candidates:
+            return
+
+        # Also filter candidates by allowed channel name
+        candidates = [
+            cid for cid in candidates
+            if (lambda ch: ch is not None and _channel_allowed(ch))(self.bot.get_channel(cid))
         ]
         if not candidates:
             return
