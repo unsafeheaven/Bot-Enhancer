@@ -5,6 +5,7 @@ import random
 import re
 from collections import defaultdict, deque
 from dataclasses import dataclass
+from datetime import date, timedelta
 from typing import List, Dict, Optional, Tuple
 
 from utils.storage import load, save
@@ -21,7 +22,6 @@ class Message:
 
 
 # Simple patterns for auto-remembering things people mention about themselves.
-# Keyed by the fact label we store, matched loosely so it fires naturally in chat.
 _FACT_PATTERNS = {
     "favorite song": re.compile(r"\bfavou?rite song(?:'s| is|:)?\s+(.+)", re.IGNORECASE),
     "favorite artist": re.compile(r"\bfavou?rite artist(?:'s| is|:)?\s+(.+)", re.IGNORECASE),
@@ -29,6 +29,8 @@ _FACT_PATTERNS = {
     "nickname": re.compile(r"\bcall me\s+(.+)", re.IGNORECASE),
     "birthday": re.compile(r"\bmy birthday(?:'s| is)?\s+(.+)", re.IGNORECASE),
     "pet": re.compile(r"\bmy (?:dog|cat|pet)(?:'s| is)? (?:named|called)\s+(.+)", re.IGNORECASE),
+    "hobby": re.compile(r"\bmy hobby(?:'s| is|:)?\s+(.+)", re.IGNORECASE),
+    "favorite color": re.compile(r"\bfavou?rite colou?r(?:'s| is|:)?\s+(.+)", re.IGNORECASE),
 }
 
 
@@ -43,12 +45,20 @@ def extract_facts(text: str) -> Dict[str, str]:
     return found
 
 
+def _today_str() -> str:
+    return date.today().isoformat()
+
+
+def _yesterday_str() -> str:
+    return (date.today() - timedelta(days=1)).isoformat()
+
+
 class HistoryManager:
     def __init__(self, max_messages: int = MAX_HISTORY):
         self.max_messages = max_messages
         self._history: Dict[int, deque] = defaultdict(lambda: deque(maxlen=max_messages))
-        # Facts persist across restarts — real long-term memory, not just in-process state.
-        # Coerce defensively: corrupt/malformed entries are dropped instead of crashing startup.
+
+        # Facts — persist across restarts. Coerce defensively.
         persisted_facts = load("user_facts", {})
         clean_facts: Dict[int, Dict[str, str]] = {}
         if isinstance(persisted_facts, dict):
@@ -61,7 +71,7 @@ class HistoryManager:
                     clean_facts[uid_int] = {str(k): str(v) for k, v in facts.items()}
         self._user_facts: Dict[int, Dict[str, str]] = defaultdict(dict, clean_facts)
 
-        # Inside jokes/callbacks per channel, also persisted long-term.
+        # Inside jokes per channel.
         persisted_jokes = load("channel_jokes", {})
         clean_jokes: Dict[int, list] = {}
         if isinstance(persisted_jokes, dict):
@@ -73,17 +83,46 @@ class HistoryManager:
                 if isinstance(jokes, list):
                     valid = [
                         j for j in jokes
-                        if isinstance(j, dict) and isinstance(j.get("text"), str) and isinstance(j.get("author"), str)
+                        if isinstance(j, dict)
+                        and isinstance(j.get("text"), str)
+                        and isinstance(j.get("author"), str)
                     ]
                     if valid:
                         clean_jokes[cid_int] = valid
         self._channel_jokes: Dict[int, list] = defaultdict(list, clean_jokes)
+
+        # Interaction stats per user — count, streak, last_date.
+        persisted_interactions = load("user_interactions", {})
+        clean_interactions: Dict[int, dict] = {}
+        if isinstance(persisted_interactions, dict):
+            for uid, data in persisted_interactions.items():
+                try:
+                    uid_int = int(uid)
+                except (TypeError, ValueError):
+                    continue
+                if isinstance(data, dict):
+                    clean_interactions[uid_int] = {
+                        "count": int(data.get("count", 0)),
+                        "streak": int(data.get("streak", 0)),
+                        "last_date": str(data.get("last_date", "")),
+                    }
+        self._interactions: Dict[int, dict] = defaultdict(
+            lambda: {"count": 0, "streak": 0, "last_date": ""},
+            clean_interactions,
+        )
+
+    # ── persistence ──────────────────────────────────────────────────────────
 
     def _save_facts(self):
         save("user_facts", {str(uid): facts for uid, facts in self._user_facts.items()})
 
     def _save_jokes(self):
         save("channel_jokes", {str(cid): jokes for cid, jokes in self._channel_jokes.items()})
+
+    def _save_interactions(self):
+        save("user_interactions", {str(uid): data for uid, data in self._interactions.items()})
+
+    # ── history ───────────────────────────────────────────────────────────────
 
     def add(self, channel_id: int, role: str, content: str, username: str = ""):
         self._history[channel_id].append(Message(role=role, content=content, username=username))
@@ -102,8 +141,10 @@ class HistoryManager:
     def clear(self, channel_id: int):
         self._history[channel_id].clear()
 
+    # ── user facts ────────────────────────────────────────────────────────────
+
     def remember(self, user_id: int, text: str):
-        """Scan a message for memorable facts and store them for this user, long-term."""
+        """Scan a message for memorable facts and store them for this user."""
         facts = extract_facts(text)
         if facts:
             self._user_facts[user_id].update(facts)
@@ -116,8 +157,10 @@ class HistoryManager:
         self._user_facts.pop(user_id, None)
         self._save_facts()
 
+    # ── inside jokes ──────────────────────────────────────────────────────────
+
     def remember_joke(self, channel_id: int, text: str, author: str):
-        """Store a memorable line (one that got a big reaction) as a long-term inside joke."""
+        """Store a memorable line (big reaction) as a long-term inside joke."""
         jokes = self._channel_jokes[channel_id]
         if any(j["text"] == text for j in jokes):
             return
@@ -132,6 +175,42 @@ class HistoryManager:
             return None
         joke = random.choice(jokes)
         return joke["text"], joke["author"]
+
+    # ── interaction / streak tracking ─────────────────────────────────────────
+
+    def bump_interaction(self, user_id: int) -> Tuple[bool, int]:
+        """
+        Call once per real conversation with this user.
+        Returns (is_first_today, current_streak).
+        Updates count, streak, and last_date.
+        """
+        today = _today_str()
+        yesterday = _yesterday_str()
+        data = self._interactions[user_id]
+
+        last_date = data.get("last_date", "")
+        is_first_today = last_date != today
+
+        if is_first_today:
+            if last_date == yesterday:
+                data["streak"] = data.get("streak", 0) + 1
+            elif last_date == "":
+                data["streak"] = 1
+            else:
+                # Gap > 1 day — streak broken
+                data["streak"] = 1
+            data["last_date"] = today
+
+        data["count"] = data.get("count", 0) + 1
+        self._interactions[user_id] = data
+        self._save_interactions()
+        return is_first_today, data["streak"]
+
+    def get_interaction_count(self, user_id: int) -> int:
+        return self._interactions[user_id].get("count", 0)
+
+    def get_streak(self, user_id: int) -> int:
+        return self._interactions[user_id].get("streak", 0)
 
 
 history_manager = HistoryManager()
