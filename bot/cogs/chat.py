@@ -204,7 +204,28 @@ class ChatCog(commands.Cog):
         if called or photo_mode:
             clean_content = stripped_content
             if not clean_content:
-                clean_content = "[posted an image]" if photo_mode else "hey"
+                clean_content = "[posted an image]" if photo_mode else ""
+
+            # If she was just called with little/no content (e.g. "rin" after "hey"),
+            # look back one message from the same user and stitch it in so she has context.
+            if called and not photo_mode and len(clean_content) < 3:
+                try:
+                    prev_msgs = [m async for m in message.channel.history(limit=2, before=message)]
+                    if prev_msgs:
+                        prev = prev_msgs[0]
+                        age = (message.created_at - prev.created_at).total_seconds()
+                        if (
+                            prev.author.id == user_id
+                            and not prev.author.bot
+                            and age < 180
+                            and prev.content
+                        ):
+                            clean_content = (prev.content + (" " + clean_content if clean_content else "")).strip()
+                except (discord.Forbidden, discord.HTTPException):
+                    pass
+
+            if not clean_content:
+                clean_content = "hey"
 
             if _on_cooldown(user_id):
                 try:
